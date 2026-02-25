@@ -3,17 +3,25 @@ import Message from "../models/message.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 
-// Updated getUsersForSidebar to include unread message counts
+// Returns only the user's friends with unread message counts
 export const getUsersForSidebar = async (req, res) => {
     try {
         const loggedInUserId = req.user._id;
 
-        // Fetch all users except the logged-in user
-        const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
+        // Get the current user's friends list
+        const currentUser = await User.findById(loggedInUserId).select("friends");
+        const friendIds = currentUser.friends || [];
 
-        // For each user, calculate the count of unseen messages sent to the logged-in user
+        if (friendIds.length === 0) {
+            return res.status(200).json([]);
+        }
+
+        // Fetch only friends
+        const friends = await User.find({ _id: { $in: friendIds } }).select("-password");
+
+        // For each friend, calculate the count of unseen messages sent to the logged-in user
         const usersWithUnread = await Promise.all(
-            filteredUsers.map(async (user) => {
+            friends.map(async (user) => {
                 const unreadCount = await Message.countDocuments({
                     senderId: user._id,
                     receiverId: loggedInUserId,
