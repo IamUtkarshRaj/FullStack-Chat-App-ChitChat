@@ -11,13 +11,13 @@ export const getUsersForSidebar = async (req, res) => {
         // Fetch all users except the logged-in user
         const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
 
-        // For each user, calculate the count of unread messages sent to the logged-in user
+        // For each user, calculate the count of unseen messages sent to the logged-in user
         const usersWithUnread = await Promise.all(
             filteredUsers.map(async (user) => {
                 const unreadCount = await Message.countDocuments({
                     senderId: user._id,
                     receiverId: loggedInUserId,
-                    isRead: false,
+                    status: { $ne: "seen" },
                 });
                 return {
                     ...user.toObject(),
@@ -63,25 +63,29 @@ export const sendMesssage = async (req, res) => {
       imageUrl = uploadResponse.secure_url;
     }
 
+    // If receiver is online, mark as delivered immediately
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    const initialStatus = receiverSocketId ? "delivered" : "sent";
+
     const newMessage = new Message({
       senderId,
       receiverId,
       text,
       image: imageUrl,
-      isRead: false,
+      status: initialStatus,
     });
 
     await newMessage.save();
 
-    // Emit real-time message
-    const receiverSocketId = getReceiverSocketId(receiverId);
+    // Emit real-time message to receiver
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
 
+      // Send updated unread count to receiver for sidebar
       const unreadCount = await Message.countDocuments({
         senderId,
         receiverId,
-        isRead: false,
+        status: { $ne: "seen" },
       });
       io.to(receiverSocketId).emit("unreadCountUpdate", {
         senderId,
@@ -102,23 +106,24 @@ export const sendMesssage = async (req, res) => {
   }
 };
 
-// NEW FUNCTION TO MARK MESSAGES AS READ
-export const markMessagesAsRead = async (req, res) => {
+// Mark messages as seen
+export const markMessagesAsSeen = async (req, res) => {
   try {
     const { senderId } = req.body;
     const userId = req.user._id;
 
     await Message.updateMany(
-      { senderId, receiverId: userId, isRead: false },
-      { $set: { isRead: true } }
+      { senderId, receiverId: userId, status: { $ne: "seen" } },
+      { $set: { status: "seen" } }
     );
 
+    // Notify sender their messages have been seen
     const senderSocketId = getReceiverSocketId(senderId);
     if (senderSocketId) {
-      io.to(senderSocketId).emit("messagesRead", { receiverId: userId });
+      io.to(senderSocketId).emit("messagesSeen", { byUserId: userId });
     }
 
-    // Notify the current user to update their sidebar
+    // Notify the current user to clear their sidebar unread count
     const currentSocketId = getReceiverSocketId(userId);
     if (currentSocketId) {
       io.to(currentSocketId).emit("unreadCountUpdate", {
@@ -129,7 +134,7 @@ export const markMessagesAsRead = async (req, res) => {
 
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error("Error in markMessagesAsRead:", error.message);
+    console.error("Error in markMessagesAsSeen:", error.message);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

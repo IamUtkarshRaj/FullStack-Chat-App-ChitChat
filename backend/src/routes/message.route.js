@@ -1,6 +1,6 @@
 import express from "express";
 import { protectRoute } from "../middleware/auth.middleware.js";
-import { getUsersForSidebar, getMesssage, sendMesssage, markMessagesAsRead } from "../controller/message.controller.js"; // Import the new controller
+import { getUsersForSidebar, getMesssage, sendMesssage, markMessagesAsSeen } from "../controller/message.controller.js";
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ router.get("/:id",protectRoute, getMesssage);
 
 router.post("/send/:id",protectRoute, sendMesssage);
 
-// NEW ROUTE TO MARK MESSAGES AS READ
-router.post("/read", protectRoute, markMessagesAsRead);
+// Route to mark messages as seen
+router.post("/seen", protectRoute, markMessagesAsSeen);
 
 export default router;

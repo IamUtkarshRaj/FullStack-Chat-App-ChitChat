@@ -2,10 +2,78 @@ import { useChatStore } from "../store/useChatStore";
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
+import { useThemeStore } from "../store/useThemeStore";
 import ChatHeader from "./ChatHeader";
 import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { formatMessageTime } from "../lib/utils";
+
+// Theme-aware "seen" tick color map
+const SEEN_COLORS = {
+  light: "#3b82f6",
+  dark: "#60a5fa",
+  cupcake: "#f472b6",
+  bumblebee: "#f59e0b",
+  emerald: "#10b981",
+  corporate: "#2563eb",
+  synthwave: "#e879f9",
+  retro: "#f97316",
+  cyberpunk: "#06b6d4",
+  valentine: "#ec4899",
+  halloween: "#f97316",
+  garden: "#22c55e",
+  forest: "#4ade80",
+  aqua: "#06b6d4",
+  lofi: "#6366f1",
+  pastel: "#a78bfa",
+  fantasy: "#8b5cf6",
+  wireframe: "#3b82f6",
+  black: "#60a5fa",
+  luxury: "#fbbf24",
+  dracula: "#ff79c6",
+  cmyk: "#06b6d4",
+  autumn: "#ef4444",
+  business: "#3b82f6",
+  acid: "#84cc16",
+  lemonade: "#65a30d",
+  night: "#38bdf8",
+  coffee: "#d97706",
+  winter: "#3b82f6",
+  dim: "#818cf8",
+  nord: "#88c0d0",
+  sunset: "#fb923c",
+};
+
+// Tick SVG component for message status
+const MessageTicks = ({ status, theme }) => {
+  const seenColor = SEEN_COLORS[theme] || "#3b82f6";
+  const grayColor = "#9ca3af";
+
+  if (status === "seen") {
+    // Double tick, colored
+    return (
+      <svg width="18" height="12" viewBox="0 0 24 14" className="inline-block ml-1">
+        <path d="M1 7l4.5 4.5L14 3" fill="none" stroke={seenColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 7l4.5 4.5L20 3" fill="none" stroke={seenColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (status === "delivered") {
+    // Double tick, gray
+    return (
+      <svg width="18" height="12" viewBox="0 0 24 14" className="inline-block ml-1">
+        <path d="M1 7l4.5 4.5L14 3" fill="none" stroke={grayColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 7l4.5 4.5L20 3" fill="none" stroke={grayColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  // sent — single tick, gray
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" className="inline-block ml-1">
+      <path d="M1 7l4.5 4.5L13 3" fill="none" stroke={grayColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+};
 
 const ChatContainer = () => {
   const {
@@ -19,6 +87,7 @@ const ChatContainer = () => {
   } = useChatStore();
 
   const { authUser } = useAuthStore();
+  const { theme } = useThemeStore();
   const scrollRef = useRef(null);
 
   const [modalImage, setModalImage] = useState(null);
@@ -37,10 +106,10 @@ const ChatContainer = () => {
   // Mark messages as read when chat is open
   useEffect(() => {
     if (selectedUser?._id) {
-      const hasUnread = messages.some(
-        (msg) => msg.senderId === selectedUser._id && !msg.isRead
+      const hasUnseen = messages.some(
+        (msg) => msg.senderId === selectedUser._id && msg.status !== "seen"
       );
-      if (hasUnread) {
+      if (hasUnseen) {
         markMessagesAsRead(selectedUser._id);
       }
     }
@@ -155,9 +224,9 @@ const ChatContainer = () => {
                   </div>
                 )}
                 {message.text && <p>{message.text}</p>}
-                {isSender && (
-                  <span className="text-[10px] text-gray-400 self-end mt-1">
-                    {message.isRead ? "✓✓" : "✓"}
+                {isSender && !message.pending && (
+                  <span className="self-end mt-1 flex items-center">
+                    <MessageTicks status={message.status || "sent"} theme={theme} />
                   </span>
                 )}
               </div>

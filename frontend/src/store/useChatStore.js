@@ -47,23 +47,23 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  /** Mark messages as read for a specific sender */
+  /** Mark messages as seen */
   markMessagesAsRead: async (senderId) => {
     try {
-      await axiosInstance.post("/messages/read", { senderId });
+      await axiosInstance.post("/messages/seen", { senderId });
 
       set({
         messages: get().messages.map((msg) =>
-          msg.senderId === senderId ? { ...msg, isRead: true } : msg
+          msg.senderId === senderId ? { ...msg, status: "seen" } : msg
         ),
       });
 
       // Notify server via socket
       const socket = useAuthStore.getState().socket;
       const authUser = useAuthStore.getState().authUser;
-      socket.emit("markRead", { senderId, receiverId: authUser._id });
+      socket.emit("markSeen", { senderId, receiverId: authUser._id });
     } catch (error) {
-      console.error("Failed to mark messages as read", error);
+      console.error("Failed to mark messages as seen", error);
     }
   },
 
@@ -146,7 +146,8 @@ export const useChatStore = create((set, get) => ({
 
     // Remove old listeners
     socket.off("newMessage");
-    socket.off("messagesRead");
+    socket.off("messagesDelivered");
+    socket.off("messagesSeen");
     socket.off("unreadCountUpdate");
 
     // New message event
@@ -158,9 +159,18 @@ export const useChatStore = create((set, get) => ({
         (newMessage.senderId === selectedUser._id ||
           newMessage.receiverId === selectedUser._id)
       ) {
-        set({ messages: [...messages, newMessage] });
+        // Avoid duplicates (sender also gets the event)
+        const isDuplicate = messages.some((m) => m._id === newMessage._id);
+        if (!isDuplicate) {
+          set({ messages: [...messages, newMessage] });
+        }
+
+        // If we're the receiver and the chat is open, mark as seen immediately
+        if (newMessage.senderId === selectedUser._id) {
+          get().markMessagesAsRead(selectedUser._id);
+        }
       } else {
-        // Increment unread for sender
+        // Not in the chat — increment unread for sender in sidebar
         set({
           users: get().users.map((user) =>
             user._id === newMessage.senderId
@@ -171,19 +181,29 @@ export const useChatStore = create((set, get) => ({
       }
     });
 
-    // Messages read event
-    socket.on("messagesRead", ({ receiverId }) => {
+    // Messages delivered event — sender sees double tick
+    socket.on("messagesDelivered", ({ recipientId }) => {
       set({
         messages: get().messages.map((msg) =>
-          msg.receiverId === receiverId ? { ...msg, isRead: true } : msg
-        ),
-        users: get().users.map((user) =>
-          user._id === receiverId ? { ...user, unreadCount: 0 } : user
+          msg.receiverId === recipientId && msg.status === "sent"
+            ? { ...msg, status: "delivered" }
+            : msg
         ),
       });
     });
 
-    // Unread count sync
+    // Messages seen event — sender sees colored double tick
+    socket.on("messagesSeen", ({ byUserId }) => {
+      set({
+        messages: get().messages.map((msg) =>
+          msg.receiverId === byUserId && msg.status !== "seen"
+            ? { ...msg, status: "seen" }
+            : msg
+        ),
+      });
+    });
+
+    // Unread count sync for sidebar
     socket.on("unreadCountUpdate", ({ senderId, unreadCount }) => {
       set({
         users: get().users.map((user) =>
@@ -196,7 +216,8 @@ export const useChatStore = create((set, get) => ({
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
     socket.off("newMessage");
-    socket.off("messagesRead");
+    socket.off("messagesDelivered");
+    socket.off("messagesSeen");
     socket.off("unreadCountUpdate");
   },
 
@@ -205,9 +226,18 @@ export const useChatStore = create((set, get) => ({
     set({ selectedUser });
 
     if (selectedUser) {
-      await get().markMessagesAsRead(selectedUser._id);
-      await get().getMessages(selectedUser._id);
-      await get().getUsers();
+      // Clear unread count in sidebar immediately for smooth UX
+      set({
+        users: get().users.map((user) =>
+          user._id === selectedUser._id ? { ...user, unreadCount: 0 } : user
+        ),
+      });
+
+      // Mark as seen on server, fetch messages in parallel
+      await Promise.all([
+        get().markMessagesAsRead(selectedUser._id),
+        get().getMessages(selectedUser._id),
+      ]);
     }
   },
 }));

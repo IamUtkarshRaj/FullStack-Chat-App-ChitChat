@@ -8,6 +8,7 @@ const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef(null);
   const emojiPickerRef = useRef(null); // <-- Reference to emoji picker
   const { sendMessage } = useChatStore();
@@ -49,17 +50,27 @@ const MessageInput = () => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    if (isSending) return;
     if (!text.trim() && !imagePreview) return;
+
+    setIsSending(true);
+
+    // Capture current values and clear UI immediately
+    const currentText = text.trim();
+    const currentImage = imagePreview;
+    setText("");
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
     try {
       await sendMessage({
-        text: text.trim(),
-        image: imagePreview,
+        text: currentText,
+        image: currentImage,
       });
-      setText("");
-      setImagePreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error("Failed to send message:", err);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -130,9 +141,13 @@ const MessageInput = () => {
         <button
           type="submit"
           className="btn btn-sm btn-circle"
-          disabled={!text.trim() && !imagePreview}
+          disabled={isSending || (!text.trim() && !imagePreview)}
         >
-          <Send size={22} />
+          {isSending ? (
+            <span className="loading loading-spinner loading-xs"></span>
+          ) : (
+            <Send size={22} />
+          )}
         </button>
       </form>
     </div>

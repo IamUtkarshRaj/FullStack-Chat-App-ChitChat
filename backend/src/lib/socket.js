@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
-import Message from "../models/message.model.js"; // Import Message model to update read status
+import Message from "../models/message.model.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -27,20 +27,58 @@ io.on("connection", (socket) => {
 
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-  // SOCKET EVENT TO MARK MESSAGES AS READ
-  socket.on("markRead", async ({ senderId, receiverId }) => {
+  // When a user comes online, mark all undelivered messages TO them as "delivered"
+  if (userId) {
+    (async () => {
+      try {
+        const result = await Message.updateMany(
+          { receiverId: userId, status: "sent" },
+          { $set: { status: "delivered" } }
+        );
+        if (result.modifiedCount > 0) {
+          // Find distinct senders whose messages just got delivered
+          const msgs = await Message.find({
+            receiverId: userId,
+            status: "delivered",
+          }).distinct("senderId");
+
+          msgs.forEach((senderId) => {
+            const senderSocketId = userSocketMap[senderId.toString()];
+            if (senderSocketId) {
+              io.to(senderSocketId).emit("messagesDelivered", {
+                recipientId: userId,
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error marking messages as delivered on connect:", err);
+      }
+    })();
+  }
+
+  // SOCKET EVENT TO MARK MESSAGES AS SEEN
+  socket.on("markSeen", async ({ senderId, receiverId }) => {
     try {
       await Message.updateMany(
-        { senderId, receiverId, isRead: false },
-        { $set: { isRead: true } }
+        { senderId, receiverId, status: { $ne: "seen" } },
+        { $set: { status: "seen" } }
       );
-      // Notify sender that messages are read
+      // Notify sender that messages are seen
       const senderSocketId = userSocketMap[senderId];
       if (senderSocketId) {
-        io.to(senderSocketId).emit("messagesRead", { receiverId });
+        io.to(senderSocketId).emit("messagesSeen", { byUserId: receiverId });
+      }
+      // Notify receiver to clear unread count in sidebar
+      const receiverSocketId = userSocketMap[receiverId];
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("unreadCountUpdate", {
+          senderId,
+          unreadCount: 0,
+        });
       }
     } catch (error) {
-      console.error("Error updating read status via socket:", error);
+      console.error("Error updating seen status via socket:", error);
     }
   });
 

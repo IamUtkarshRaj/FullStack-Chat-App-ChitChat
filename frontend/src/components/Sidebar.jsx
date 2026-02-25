@@ -4,6 +4,19 @@ import { useAuthStore } from "../store/useAuthStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Users } from "lucide-react";
 
+// Animated badge component for smooth counter transitions
+const UnreadBadge = ({ count }) => {
+  if (count <= 0) return null;
+  return (
+    <span
+      className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1
+        animate-[badgePop_0.3s_ease-out]"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+};
+
 const Sidebar = () => {
   const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading } = useChatStore();
   const { onlineUsers } = useAuthStore();
@@ -63,22 +76,14 @@ const Sidebar = () => {
                   rounded-full ring-2 ring-zinc-900"
                 />
               )}
-              {user.unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full px-1.5">
-                  {user.unreadCount}
-                </span>
-              )}
-
+              <span className="absolute -top-1 -right-1">
+                <UnreadBadge count={user.unreadCount || 0} />
+              </span>
             </div>
 
             <div className="hidden lg:block text-left min-w-0">
               <div className="font-medium truncate flex items-center gap-2">
                 {user.fullName}
-                {user.unreadCount > 0 && (
-                  <span className="text-xs bg-red-500 text-white px-1 rounded-full">
-                    {user.unreadCount}
-                  </span>
-                )}
               </div>
               <div className="text-sm text-zinc-400">
                 {onlineUsers.includes(user._id) ? "Online" : "Offline"}
